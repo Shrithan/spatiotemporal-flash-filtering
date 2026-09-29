@@ -1,0 +1,13 @@
+{
+  "frames": 1125,
+  "fps": 23.976023976023978,
+  "strongest_frame": 685,
+  "strongest_time_seconds": 28.57020833333333,
+  "source_mean_activity": 0.06292669829510329,
+  "filtered_mean_activity": 0.014083786847443627,
+  "source_peak_activity": 0.118796706199646,
+  "filtered_peak_activity": 0.11284877359867096,
+  "filtered_activity_at_source_peak": 0.02770322933793068,
+  "mean_absolute_rgb_modification": 0.08954805575202031,
+  "modified_pixel_ratio": 0.5960604726080246
+}

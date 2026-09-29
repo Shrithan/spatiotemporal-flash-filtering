@@ -1,0 +1,13 @@
+{
+  "seed": 7,
+  "length": 24,
+  "height": 64,
+  "width": 96,
+  "localization": {
+    "threshold": 0.12,
+    "block_size": 8,
+    "temporal_window": 2,
+    "cleanup_kernel": 3,
+    "feather_sigma": 2.0
+  }
+}

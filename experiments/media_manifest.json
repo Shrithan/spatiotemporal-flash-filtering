@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "disclaimer": "Entries are computational test cases, not clinical risk labels. Source videos are not committed.",
+  "cases": [
+    {
+      "id": "avengers_from_3m",
+      "source_url": "https://www.youtube.com/watch?v=8gcRTMr-rlg",
+      "title": "Avengers Endgame Final Battle Scene 4K 60fps 'Avengers Assemble'",
+      "start_seconds": 180,
+      "duration_seconds": 106,
+      "local_path": "outputs/youtube/8gcRTMr-rlg/source_from_3m.mp4",
+      "sha256": "221d04b258984212bb20d0737815d6722c81f26d29448ee5ba24231dfc111b80",
+      "category": "action_scene",
+      "reason": "Ordinary action-media control with cuts, motion, and brightness changes."
+    },
+    {
+      "id": "break_my_soul_closing_segment",
+      "source_url": "https://www.youtube.com/watch?v=yjki-9Pthh0",
+      "title": "Beyonce - BREAK MY SOUL (Official Lyric Video)",
+      "duration_seconds": 47,
+      "local_path": "outputs/youtube/yjki-9Pthh0/source_closing_segment.mp4",
+      "sha256": "87c70fb2205b5b32175a3d96e6c7e3bf670efb983269d8302c98b585d029767b",
+      "category": "lyric_video",
+      "reason": "Repeated large color and luminance transitions used as a real-media case study."
+    },
+    {
+      "id": "flashing_stress_test",
+      "source_url": "https://www.youtube.com/watch?v=gT-2wFSIffM",
+      "title": "Free Epilepsy Test",
+      "duration_seconds": 15,
+      "local_path": "outputs/youtube/gT-2wFSIffM/source.mp4",
+      "sha256": "627d56d98d03e73559cd32dba64203af9bd499fab2f8e78cefbaebe1d6124d6b",
+      "category": "designed_stress_test",
+      "reason": "Deliberately flashing algorithm stress test; not treated as clinical evidence."
+    }
+  ]
+}
