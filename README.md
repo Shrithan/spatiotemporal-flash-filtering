@@ -1,5 +1,7 @@
 # Spatiotemporal Flash Filtering
 
+Research prototype for detecting and locally suppressing rapid spatiotemporal visual changes in video.
+
 **Research question:** Can spatially localized temporal filtering reduce rapid visual changes while preserving more source information than whole-frame filtering?
 
 ![Static research demo showing source, detection, and filtered frames](docs/assets/demo.gif)
@@ -61,6 +63,8 @@ A 47-second excerpt from an official lyric video is used as a natural-media demo
 ## Install and try it
 
 Python 3.11–3.13 is tested in CI.
+
+The current v1.0 suite contains **44 tests**; a fresh local validation collected and passed all 44.
 
 ```bash
 python3 -m venv .venv
