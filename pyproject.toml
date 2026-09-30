@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spatiotemporal-flash-filtering"
-version = "0.1.0"
+version = "1.0.0"
 description = "Research tools for localized suppression of rapid temporal changes in video"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ license = {text = "MIT"}
 dependencies = ["numpy>=1.24", "opencv-python>=4.8", "matplotlib>=3.7", "pandas>=2.0", "scikit-image>=0.21"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4", "pytest-cov>=4.1"]
+dev = ["pytest>=7.4", "pytest-cov>=4.1", "reportlab>=4.0"]
 
 [project.scripts]
 flashfilter = "flashfilter.cli:main"

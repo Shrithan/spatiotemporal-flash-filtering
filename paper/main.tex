@@ -1,151 +1,186 @@
-\documentclass[10pt,twocolumn]{article}
-\usepackage[margin=0.72in]{geometry}
+\documentclass[9pt,twocolumn]{article}
+\usepackage[margin=0.68in]{geometry}
 \usepackage{amsmath,amssymb,booktabs,graphicx,microtype,url}
 \usepackage[hidelinks]{hyperref}
+\setlength{\columnsep}{0.22in}
 \title{Spatiotemporal Detection and Localized Suppression\\of Rapid Visual Changes in Video}
-\author{Undergraduate Computer Vision Research Project}
+\author{Shrithan Adipuram\\University of Wisconsin--Madison}
 \date{September 2026}
 \begin{document}
 \maketitle
 
 \begin{abstract}
-This work asks whether spatially localized temporal filtering can reduce rapid brightness changes while preserving unaffected image regions better than whole-frame filtering. We implement interpretable global and block baselines, then develop an event-specific adaptive candidate that separates opposing luminance transitions, saturated-red transitions, and regular high-contrast patterns. Each evidence channel receives a corresponding local correction: luminance-step limiting, desaturation, or contrast reduction. A deterministic ten-scenario synthetic benchmark evaluates the baselines, while a 47-second excerpt from an official lyric video provides a real-media case study for the adaptive candidate. On that excerpt, mean normalized temporal activity decreases from 0.06293 to 0.01408, although peak activity decreases only from 0.11880 to 0.11285 and visible alteration remains a quality tradeoff. Scene cuts and moving objects remain important confounds. These measurements are computational proxies, not clinical validation or a guarantee of seizure safety or standards compliance.
+We investigate whether spatially localized temporal filtering can reduce rapid visual changes while preserving more source information than whole-frame filtering. The artifact implements no-filter, global, and block-localized baselines plus an event-specific adaptive method with separate luminance-transition, saturated-red, and regular-pattern evidence channels. A deterministic 12-scenario synthetic benchmark, a compact parameter sweep, component ablations, and a natural-media case study provide evaluation. At default settings, the adaptive method reduces aggregate mean temporal activity from 0.10866 to 0.02966 and attains mask IoU 0.8907, but incurs MAE 0.05624 and leaves aggregate peak activity 0.16744 because a reversal is required before correction. More importantly, no adaptive configuration lies on the aggregate MAE--activity Pareto frontier; tuned global and localized baselines provide better tradeoffs on these two metrics. A 47-second lyric-video case study reduces mean activity from 0.06293 to 0.01408 while visibly altering the sequence and leaving a filtered peak of 0.11285. These values are computational proxies, not clinical validation, seizure-risk estimates, or guarantees of standards compliance.
 \end{abstract}
 
 \section{Introduction}
-Rapid changes in video can be spatially global, such as alternating full frames, or confined to a small object. A detector that averages the entire image can miss a small intense region; a global filter can also distort pixels unrelated to the detected event. This project studies the resulting suppression--preservation tradeoff with transparent algorithms suitable for inspection and modification by a student.
+Rapid changes in video can cover a complete frame or a small object. A global spatial average may dilute an intense localized event, while a whole-frame response may alter content unrelated to that event. This motivates the research question: \emph{at comparable levels of measured temporal suppression, how do global, localized, and event-specific methods differ in preservation of the source video?}
 
-The contribution is an end-to-end reproducible testbed: explicit color handling, global and localized baselines, separable luminance/red/pattern evidence, event-specific corrections, ten deterministic synthetic cases with ground truth, a real-media case study, joint metrics, ablations, a command-line interface, and analytic tests. It does not model viewing distance, calibrated display luminance, or individual physiology. Consequently, its activity metric and analyzer outputs must not be interpreted as medical-risk measures.
+The project is an interpretable testbed rather than a clinical system. It contributes (1) explicit color and temporal-change definitions; (2) three clear baselines; (3) an experimental adaptive method that maps distinct evidence to distinct corrections; (4) controlled synthetic ground truth, per-case metrics, a parameter study, and ablations; and (5) executable scripts, tests, and generated tables. Reconstruction and frame-interpolation filters retained in the repository are exploratory failure investigations, not central methods.
+
+Clinical reviews establish that visually sensitive responses depend on temporal, spatial, chromatic, display, viewing, and individual factors \cite{fisher2005photic,fisher2022visually,harding2010image}. This project measures only decoded-pixel signals. Throughout,
+\[
+\text{computational temporal activity}\ne\text{clinical seizure risk}.
+\]
 
 \section{Related Work}
-Accessibility guidance treats flash frequency, brightness/color transitions, and affected area as jointly relevant \cite{w3c2023flashes}. The present work is only inspired by the observation that area matters; its threshold is not a WCAG threshold and it performs no conformance assessment. ITU-R BT.709 specifies HDTV colorimetry \cite{itu709}; we use its RGB-to-luminance coefficients after explicitly inverting the sRGB transfer function.
+Clinical and psychophysical literature identifies flashes, long-wavelength red transitions, and high-contrast regular patterns as relevant stimulus classes \cite{fisher2022visually,wilkins2005patterns,porciatti2000cortical}. Broadcast guidance and web accessibility material translate parts of that evidence into operational tests \cite{itu1702,w3c2023flashes}; however, standards-inspired analysis is not equivalent to formal conformance. A recent guideline comparison also shows that definitions and tool behavior vary across regimes \cite{jordan2024guidelines}.
 
-General luminance flashes and transitions involving saturated red are treated as distinct cases in accessibility guidance \cite{w3c2023flashes}. Consequently, converting an entire video to grayscale is not a general solution: a luminance-preserving grayscale transform leaves black--white temporal differences essentially unchanged. We instead use desaturation only where the saturated-red proxy supplies evidence, while handling general flashes through a luminance-domain constraint.
-
-Nomura et al. proposed an adaptive temporal filter driven by a model-derived index and evaluated it with photosensitive patients \cite{nomura2000adaptive}. Our system is not a reproduction of that clinical work. It instead uses a deliberately simpler signal-processing proxy and synthetic evaluation so every decision can be explained. We make no novelty or clinical-efficacy claim.
+Computational work includes adaptive temporal filtering evaluated with patients \cite{nomura2000adaptive}, automatic flashing-content detection \cite{carreira2015automatic}, parallel detection architectures \cite{alzubaidi2016parallel}, learned video transformations \cite{barbu2020deep}, and user-facing GIF defenses \cite{south2021gifs}. Unlike black-box transformation approaches, this undergraduate project emphasizes small auditable components, spatial ground truth, and the suppression--distortion tradeoff. It does not claim algorithmic novelty or reproduce a normative analyzer in full.
 
 \section{Problem Formulation}
-A video is $V=\{I_0,\ldots,I_{T-1}\}$ with $I_t\in[0,1]^{H\times W\times3}$. For an sRGB channel $C$, linearization is
+Let a video be $V=\{I_0,\ldots,I_{T-1}\}$ with RGB frames in $[0,1]^{H\times W\times3}$. Decoded values are assumed to use the sRGB encoding curve. Each channel is linearized using the sRGB inverse transfer function, after which relative linear luminance is
 \begin{equation}
-C_{\mathrm{lin}}=\begin{cases}C/12.92&C\leq0.04045\\((C+0.055)/1.055)^{2.4}&\text{otherwise.}\end{cases}
+Y_t=0.2126R_{t,\mathrm{lin}}+0.7152G_{t,\mathrm{lin}}+0.0722B_{t,\mathrm{lin}}.
 \end{equation}
-Relative luminance is $Y=0.2126R_{\mathrm{lin}}+0.7152G_{\mathrm{lin}}+0.0722B_{\mathrm{lin}}$. We compute
-\begin{equation}
-\Delta_t(x,y)=|Y_t(x,y)-Y_{t-1}(x,y)|,\quad D_t=\frac{1}{HW}\sum_{x,y}\Delta_t(x,y).
-\end{equation}
-If fraction $p$ of pixels change by magnitude $a$, then $D_t=pa$: spatial averaging dilutes small regions. Conceptually, filtering seeks
-\begin{equation}
-\min_{\widehat V}\mathcal{D}(V,\widehat V)\quad\text{s.t.}\quad\mathcal{R}(\widehat V)\leq\tau,
-\end{equation}
-where $\mathcal{D}$ is visual distortion and $\mathcal{R}$ is our defined activity proxy, not a medically validated risk function.
+sRGB and BT.709 share primaries and a D65 white point, hence the linear-light coefficients; BT.709 itself does not specify sRGB decoding \cite{itu709,w3c_luminance}. Applying these weights directly to encoded RGB is available only as an explicitly named brightness proxy.
 
-\section{Method}
-\textbf{Global baseline.} If $D_t\geq\tau$, every pixel is blended toward the prior filtered frame: $\widehat I_t=(1-\alpha)I_t+\alpha\widehat I_{t-1}$. Otherwise, $I_t$ is retained.
-
-\textbf{Localization.} Difference maps are averaged over the latest $w$ frames. The image is divided into $b\times b$ blocks, and every pixel in a block is selected when its mean activity exceeds $\tau$. An optional morphological closing fills small gaps. Gaussian smoothing converts the binary decision $B_t$ to a soft mask $M_t\in[0,1]$, reducing hard-boundary artifacts. The output is
+Per-pixel change and its global mean are
+\begin{align}
+\Delta_t(x,y)&=|Y_t(x,y)-Y_{t-1}(x,y)|,\\
+D_t&=\frac{1}{HW}\sum_{x,y}\Delta_t(x,y).
+\end{align}
+If a fraction $p$ changes by $a$, then $D_t=pa$; small regions are therefore diluted. We seek filtered video $\widehat V$ conceptually satisfying
 \begin{equation}
-\widehat I_t=(1-\alpha M_t)\odot I_t+\alpha M_t\odot\widehat I_{t-1}.
+\min_{\widehat V}\mathcal D(V,\widehat V)
+\quad\text{s.t.}\quad \mathcal R(\widehat V)\le\tau,
 \end{equation}
-Defaults are $\tau=0.12$, $b=8$, $w=2$, $\alpha=0.65$, closing width 3, and Gaussian $\sigma=2$. These are experimental choices, not safety limits. Processing is $O(THW)$ time and, in the current batch implementation, $O(THW)$ memory. Blocks were chosen over learned segmentation for interpretability; their main limitation is coarse boundaries.
+where $\mathcal D$ is source distortion and $\mathcal R$ is the defined temporal-activity proxy. We evaluate both rather than collapsing them into an unsupported safety score.
 
-\textbf{Separable event analyzers.} For the adaptive candidate, a flash pixel requires consecutive above-threshold transitions with opposite signs at the same location. Luminance evidence uses signed changes $L_t=Y_t-Y_{t-1}$. A simple, explicitly approximate red signal is
+\section{Methods}
+\subsection{Baselines}
+\textbf{No filtering} copies the source. \textbf{Global filtering} detects $D_t\ge\tau$ and recursively blends the entire current frame toward the prior output. \textbf{Localized block filtering} averages the last $w$ change maps, thresholds fixed block means, optionally closes gaps, and Gaussian-feathers the mask $M_t$. Its output is
 \begin{equation}
-S_t=\begin{cases}R_t-\max(G_t,B_t),&R_t/(R_t+G_t+B_t)\geq0.8,\\0,&\text{otherwise,}\end{cases}
+\widehat I_t=(1-\alpha M_t)I_t+\alpha M_t\widehat I_{t-1}.
 \end{equation}
-and applies the same opposing-transition rule to $S_t-S_{t-1}$. This is not the complete WCAG chromaticity calculation. A separate $O(HW)$ tile detector finds approximately equally spaced alternating edges in horizontal or vertical mean profiles as evidence of regular high-contrast patterns. Gaussian smoothing feathers each spatial mask.
+All three are $O(HW)$ per frame. Block size trades spatial precision for robustness, while recursive blending can create motion trails.
 
-\textbf{Event-specific adaptive correction.} Let $M_t^L$, $M_t^R$, and $M_t^P$ denote soft luminance, red, and pattern masks. In $M_t^R$, the current color is blended toward an equal-channel grayscale value constructed from the same linear relative luminance. Thus chroma is reduced locally without claiming that grayscale addresses general flashing. In $M_t^L$, target luminance is clamped relative to the prior output:
+\subsection{Event-Specific Adaptive Method}
+Figure~\ref{fig:architecture} reflects the implemented pipeline. Separate masks $M_t^L,M_t^R,M_t^P$ encode three kinds of evidence. Luminance and red events require two consecutive, above-threshold signed transitions of opposite direction at the same pixel. The red signal is the documented proxy $R-\max(G,B)$ where $R/(R+G+B)$ exceeds a configured ratio; it is not a normative chromaticity test. Pattern evidence searches tile-wise horizontal and vertical mean profiles for sufficiently strong, alternating, regularly spaced edges.
+
+Each channel receives one motivated correction. Red evidence is desaturated toward an equal-channel value having the same relative linear luminance. At luminance-event pixels,
 \begin{equation}
 Y_t^*=\operatorname{clip}(Y_t,\widehat Y_{t-1}-s,\widehat Y_{t-1}+s),
 \end{equation}
-then a neutral linear-RGB offset realizes the target before soft-mask compositing. This directly bounds detected luminance reversals and avoids the motion trails produced by recursive whole-region blending. In $M_t^P$, contrast is reduced around a Gaussian local mean $\mu_t$:
+then a neutral linear-RGB offset realizes $Y_t^*$. Pattern contrast is contracted around Gaussian local mean $\mu_t$:
 \begin{equation}
 I_t^P=\mu_t+(1-\rho)(I_t-\mu_t).
 \end{equation}
-The three corrections remain independently configurable. Their default strengths are red desaturation $0.90$, luminance step $s=0.08$, and pattern contrast reduction $\rho=0.35$.
+Gaussian-feathered masks composite each result. Pattern correction starts on frame zero so a static pattern is not given an artificial one-frame transient. Total time is $O(THW)$ and streaming state is $O(HW)$.
+
+\IfFileExists{figures/adaptive_architecture.png}{%
+\begin{figure*}[t]
+\centering\includegraphics[width=.88\textwidth]{figures/adaptive_architecture.png}
+\caption{Implemented event-specific adaptive method. The three evidence channels remain inspectable and map to different local corrections before soft-mask compositing.}
+\label{fig:architecture}
+\end{figure*}}{}
 
 \section{Experimental Setup}
-Ten 24-frame, $96\times64$ RGB sequences are generated with seed 7: whole-frame alternation; small, medium, multiple, and rapid localized alternation; static texture; gradual illumination; a scene cut; global exposure-like variation; and a moving bright object. The last five include negatives or confounds that a naive difference detector should handle poorly. Target cases provide per-frame masks.
+The generator uses seed 7 and produces twelve 24-frame, $96\times64$, 24-fps RGB sequences: whole-frame alternation; small, medium, multiple, and rapid localized alternation; static high-contrast texture; gradual illumination; scene cut; global exposure change; moving bright object; localized red alternation; and a persistent regular pattern. Positive cases include exact masks; empty masks mark designed confounds, not medically safe content.
 
-Every method receives identical arrays. Activity measures include mean and peak $D_t$, threshold-exceeding frames, high-change area, and residual activity inside target masks. Distortion uses MAE, MSE, PSNR, and SSIM. We also report modified-pixel ratio, mask precision/recall/F1/IoU, elapsed time, and FPS. No-op similarity is perfect by construction, illustrating why distortion and suppression must be read jointly. Tests cover analytic luminance and activity cases, mask confusion counts, filter selectivity, lossless I/O, and a complete tiny benchmark.
+We report mean and peak $D_t$, threshold-exceeding frames, high-change area, residual activity in labeled regions, MAE, MSE, PSNR, SSIM, modified-area ratio, mask precision/recall/F1/IoU, time, and FPS. Infinite aggregate PSNR can occur because no-op cases have zero MSE, so MAE and SSIM are more useful summaries here.
 
-For a real-media case study, we use a 47-second, $1280\times720$, 23.976-fps closing excerpt from the official lyric video for ``BREAK MY SOUL'' \cite{beyonce2022break}. This example was selected because its repeated large visual transitions make the suppression effect measurable; it is not labeled as medically hazardous. The diagnostic-strength adaptive configuration uses transition threshold 0.03, full red-event desaturation, luminance step $s=0.03$, pattern reduction $\rho=0.50$, and mask $\sigma=2$. Source and output are decoded together by \texttt{experiments/render\_frame\_differences.py}; the script writes the frame panels, plot, and JSON values used below.
+The compact sweep evaluates global thresholds $\{.04,.08,.12,.18\}$ and blends $\{.35,.65,.85\}$; localized thresholds $\{.06,.12,.18\}$, the same blends, and block sizes $\{4,8\}$; and adaptive luminance thresholds $\{.05,.10,.15\}$, maximum steps $\{.03,.08,.15\}$, and moderate/strong red-pattern profiles. Every setting is evaluated on every case. Pareto efficiency minimizes aggregate MAE and mean activity within this finite grid.
+
+The real-media case study is a 47-second, $1280\times720$, 23.976-fps closing excerpt from the official ``BREAK MY SOUL'' lyric video \cite{beyonce2022break}. It was chosen for repeated large transitions, not because it has a clinical label. The source URL, segment, local hash, and rationale are recorded without redistributing the video.
 
 \section{Results}
-Table~\ref{tab:main} reports means across ten cases from the generated CSV. The localized method has the lowest mean and peak activity, but worse MAE and SSIM than the global baseline. Thus it does not dominate the baseline; it selects a different tradeoff.
+Table~\ref{tab:main} gives actual canonical means across twelve cases. Default adaptive filtering has the highest IoU and lower mean activity than both central baselines, but its MAE is greatest and peak activity remains close to no filtering. Global filtering has the best default SSIM. The exploratory reconstruction method reduces mean activity only slightly and has the largest MAE.
 
 \begin{table}[h]
-\centering\small
-\caption{Canonical benchmark means. Lower is better for activity, MAE, and modified area; higher is better for SSIM.}
+\centering\scriptsize
+\caption{Canonical 12-case means. Activity, peak, MAE, and area are minimized; SSIM and IoU are maximized.}
 \label{tab:main}
-\begin{tabular}{lrrrrr}\toprule
-Method & Mean & Peak & MAE & SSIM & Area\\\midrule
-None & .1251 & .2007 & .0000 & 1.0000 & .0000\\
-Global & .0385 & .1069 & .0403 & .9545 & .1386\\
-Localized & .0356 & .0836 & .0449 & .9385 & .1562\\\bottomrule
+\begin{tabular}{lrrrrrr}\toprule
+Method&Activity&Peak&MAE&SSIM&Area&IoU\\\midrule
+None&.1087&.1717&.0000&1.000&.000&.417\\
+Global&.0365&.0935&.0336&.962&.115&.451\\
+Localized&.0310&.0741&.0399&.940&.149&.628\\
+Adaptive&.0297&.1674&.0562&.917&.165&.891\\
+Enhanced (expl.)&.0290&.1667&.0397&.935&.073&.727\\
+Framegen (expl.)&.0978&.1687&.0827&.893&.127&.727\\\bottomrule
 \end{tabular}
 \end{table}
 
-For the small square, localization modifies 1.00\% of locations and achieves IoU 0.2623; its coarse block is larger than the labeled square. For whole-frame alternation it modifies 95.83\%, so localization provides no area advantage. Across target scenarios, IoU ranges from 0.2623 to 1.0000. The repository's generated tradeoff plot shows each per-case suppression--distortion pair and is derived directly from the same canonical CSV as Table~\ref{tab:main}.
+\subsection{Suppression--Distortion Study}
+Figure~\ref{fig:pareto} is generated from 588 per-case measurements. The main negative result is that none of the 18 adaptive configurations is non-dominated under aggregate MAE and mean activity. The 17-point frontier contains no filtering, global, and localized settings. For example, the strongest evaluated adaptive setting reaches activity .02315 at MAE .06465; localized $\tau=.06$, $\alpha=.85$, block 8 reaches lower activity .01654 at lower MAE .05128. This does not prove universal inferiority, but it rejects a claim that the current adaptive method offers the best aggregate two-objective tradeoff.
 
-\textbf{Real-media adaptive case study.} Table~\ref{tab:lyric} is generated from the paired lyric-video decoding. Mean activity falls by 77.6\%. At the strongest source transition (28.57 seconds), activity falls from 0.11880 to 0.02770; however, the maximum over the complete filtered excerpt is 0.11285 at a different frame. The latter result is important: reducing average activity does not guarantee elimination of every large transition. Mean absolute RGB modification is 0.08955, demonstrating that the diagnostic-strength configuration makes a substantial preservation tradeoff.
+\IfFileExists{../experiments/results/canonical/sweep/suppression_distortion_pareto.png}{%
+\begin{figure}[h]
+\centering\includegraphics[width=\columnwidth]{../experiments/results/canonical/sweep/suppression_distortion_pareto.png}
+\caption{All evaluated operating points and the non-dominated MAE--mean-activity frontier.}
+\label{fig:pareto}
+\end{figure}}{}
 
-Figure~\ref{fig:lyric-frames} shows the actual adjacent decoded frames at the strongest source transition. The source changes from a nearly uniform red field to a nearly black field containing white text. The adaptive output retains the first frame but raises the second frame toward gray, reducing the corresponding luminance-difference map. This is also a clear example of the method's cost: the filtered current frame is visibly different from the source. Figure~\ref{fig:lyric-modification} isolates that modification and shows that this particular transition is essentially global rather than spatially localized.
+Spatial localization still matters case-by-case. On the small square, the global default makes no change; localized filtering reduces mean activity from .01007 to .00198 while modifying .998\% of pixel locations. Adaptive filtering reaches .00287 with IoU .897, versus .262 for coarse block localization. On whole-frame alternation, localization offers no spatial advantage: global and localized outputs are identical. On localized red alternation, adaptive IoU is .954 but its MAE .08167 exceeds localized MAE .02949.
 
-\begin{table}[h]
-\centering\small
-\caption{Official lyric-video excerpt: normalized activity from the generated paired-video metrics.}
-\label{tab:lyric}
-\begin{tabular}{lrr}\toprule
-Metric & Source & Adaptive\\\midrule
-Mean activity & .06293 & .01408\\
-Peak activity & .11880 & .11285\\
-Activity at strongest source transition & .11880 & .02770\\\bottomrule
-\end{tabular}
-\end{table}
+\subsection{Natural-Media Case Study}
+Mean activity in the lyric excerpt falls from .06293 to .01408 (77.6\%). At the strongest source transition it falls from .11880 to .02770, but the maximum elsewhere in the filtered excerpt is .11285. Mean absolute RGB modification is .08955 and 59.6\% of decoded pixel locations change by more than one 8-bit code value. Figure~\ref{fig:lyric-sequence} shows the three strongest adjacent pairs. Black-to-gray changes are plainly visible; the measurement gain is not free.
 
-\IfFileExists{figures/lyric_adaptive/strongest_transition.png}{%
+\IfFileExists{figures/lyric_adaptive/frame_sequence_comparison.png}{%
 \begin{figure*}[t]
-\centering
-\includegraphics[width=.96\textwidth]{figures/lyric_adaptive/strongest_transition.png}
-\caption{Actual adjacent frames at the strongest source transition in the lyric-video excerpt (28.57 seconds). Top: source previous frame, source current frame, and absolute relative-luminance change. Bottom: corresponding adaptive frames and change map. Heatmaps share the range $[0,1]$. The lower-right map is visibly weaker, but the gray filtered frame illustrates the associated appearance change. Frames are reproduced for research analysis from the official video \cite{beyonce2022break}.}
-\label{fig:lyric-frames}
-\end{figure*}%
-}{}
-
-\IfFileExists{figures/lyric_adaptive/source_filtered_difference.png}{%
-\begin{figure*}[t]
-\centering
-\includegraphics[width=.94\textwidth]{figures/lyric_adaptive/source_filtered_difference.png}
-\caption{Source current frame, adaptive current frame, and per-pixel maximum absolute RGB-channel modification at the same transition. The nearly uniform modification map indicates that the detected event covers most of the frame; localization cannot preserve a large unaffected background in this example.}
-\label{fig:lyric-modification}
-\end{figure*}%
-}{}
-
-\IfFileExists{figures/lyric_adaptive/temporal_activity.png}{%
-\begin{figure*}[t]
-\centering
-\includegraphics[width=.88\textwidth]{figures/lyric_adaptive/temporal_activity.png}
-\caption{Temporal activity for the lyric-video excerpt. The adaptive output substantially lowers repeated activity across much of the segment, while isolated residual peaks remain. Generated directly from decoded source and filtered frames.}
-\label{fig:lyric-activity}
-\end{figure*}%
-}{}
+\centering\includegraphics[width=.96\textwidth]{figures/lyric_adaptive/frame_sequence_comparison.png}
+\caption{Actual adjacent source and adaptive frames at the three strongest source transitions in the lyric-video excerpt. Labels give time within the extracted segment and decoded frame index. Reproduced for research analysis from the official video \cite{beyonce2022break}.}
+\label{fig:lyric-sequence}
+\end{figure*}}{}
 
 \section{Ablation Study}
-The default localized configuration has mean IoU 0.6589 across all ten cases under the defined empty-mask convention. Reducing block size from 8 to 4 improves mean IoU to 0.7511 with nearly unchanged mean activity (0.0361), while block size 16 yields 0.6874. A hard mask reduces mean activity from 0.0356 to 0.0343 but raises MAE from 0.0449 to 0.0456 and may create seams. Morphological cleanup has no measurable effect on these clean shapes. Threshold 0.08 modifies more area (0.1648) than threshold 0.18 (0.1558). These results do not establish universal parameter choices.
+Table~\ref{tab:ablation} shows that luminance correction accounts for nearly all aggregate activity suppression. Adding red evidence changes activity from .02985 to .02966 but raises MAE from .03941 to .04281. Pattern correction changes static appearance and increases MAE without reducing temporal activity. The all-channel configuration improves aggregate mask IoU because the synthetic suite includes labeled red and pattern cases, yet it is not the best preservation choice.
+
+\begin{table}[h]
+\centering\scriptsize
+\caption{Adaptive component ablation means; L=luminance, R=red, P=pattern.}
+\label{tab:ablation}
+\begin{tabular}{lrrrrr}\toprule
+Channels&Activity&Peak&MAE&Area&IoU\\\midrule
+L&.02985&.16744&.03941&.0749&.807\\
+R&.10808&.17169&.00404&.0095&.496\\
+P&.10866&.17169&.01343&.0833&.500\\
+L+R&.02966&.16744&.04281&.0817&.807\\
+L+P&.02985&.16744&.05284&.1583&.891\\
+R+P&.10808&.17169&.01747&.0929&.580\\
+L+R+P&.02966&.16744&.05624&.1650&.891\\\bottomrule
+\end{tabular}
+\end{table}
+
+\IfFileExists{figures/adaptive_ablation.png}{%
+\begin{figure}[h]
+\centering\includegraphics[width=\columnwidth]{figures/adaptive_ablation.png}
+\caption{Suppression and distortion from the generated adaptive ablation table.}
+\end{figure}}{}
 
 \section{Failure Cases and Limitations}
-The localized method modifies 8.33\% of locations at a scene cut and 2.11\% for a moving bright object; both have zero IoU against their no-flash masks. Pure differencing cannot separate object displacement from temporal alternation. The global exposure oscillation remains unfiltered at the default threshold with mean activity 0.0436. Gradual change and static texture correctly cause no modifications in this benchmark.
+The global and localized baselines respond to an isolated scene cut, modifying 4.17\% and 8.33\% of locations respectively despite an empty event mask. Localized filtering also modifies 2.11\% on a moving bright object; global and adaptive defaults do not. None responds to the designed global exposure change at its default threshold. These results expose the limitations of raw differences and threshold selection.
 
-The synthetic dataset is small, SDR, and internally uncompressed. Ground-truth masks label designed alternation, not medical risk. The real-media example has no clinical or pixel-level annotation and therefore supports only paired signal measurements. Opposing transitions and an approximate saturated-red signal are implemented, but the method does not reproduce the complete colorimetry, viewing geometry, calibrated display output, or decision logic of any accessibility standard. Pattern detection is limited to horizontal and vertical tile profiles. Filtering acts after an opposing transition is observed, so the first large transition can remain. Compression also contaminates naive pixel modification counts. Runtime is machine-dependent. Batch experiments can use high memory, although ordinary video filtering has a constant-memory streaming path. Future work should add scene-cut rejection, optical-flow compensation, prospective first-transition handling, HDR support, held-out parameter selection, annotated real media, and independently validated analyzer comparisons.
+The adaptive detector requires an opposing transition, so the first large change survives. For whole-frame alternation, its peak remains .75431 even though mean activity falls from .75431 to .10932. Pattern detection is limited to horizontal/vertical tile profiles, its correction can alter a static image without changing temporal activity, and the red ratio is not perceptually uniform. Recursive baselines may ghost moving content; exploratory reconstruction can produce interpolation artifacts. Compression changes decoded pixels and therefore contaminates modification counts.
+
+\IfFileExists{figures/failure_cases.png}{%
+\begin{figure}[h]
+\centering\includegraphics[width=\columnwidth]{figures/failure_cases.png}
+\caption{Measured behavior on three synthetic confounds. Zero modification is not proof of correct semantic classification.}
+\end{figure}}{}
+
+The dataset is small, synthetic, SDR, and internally uncompressed. Its ground truth is design intent, not medical outcome. The natural-media example has no clinical annotation. The implementation omits calibrated display output, viewing geometry, HDR, individual physiology, full chromaticity rules, scene understanding, and formal validation against independent commercial analyzers. Runtime values depend on hardware. Accordingly, neither a metric threshold nor a filtered output should be described as medically safe.
 
 \section{Conclusion}
-Localized temporal blending can preserve untouched regions when activity occupies a small area, but it is not automatically less distortive in aggregate and inherits false positives from frame differencing. The event-specific candidate improves interpretability by matching desaturation to red evidence, luminance limiting to general flashes, and contrast reduction to regular patterns. On the lyric-video excerpt it strongly reduces mean activity but leaves a similar worst-case peak elsewhere and visibly alters much of the sequence. This is a useful result rather than evidence of a finished safety system: preservation and suppression must still be optimized jointly. The repository makes these tradeoffs reproducible and inspectable. Its outputs describe computational visual-change proxies only and must not be presented as seizure prevention, clinical validation, or guaranteed accessibility compliance.
+Localized filtering demonstrably avoids whole-frame modification on small controlled regions, but the best method depends on the chosen suppression level and distortion budget. The current event-specific adaptive method improves interpretability and localization, yet the parameter study shows that it is not Pareto-superior on aggregate MAE and mean activity. Its luminance branch supplies almost all measured suppression, while red and pattern branches provide scenario-specific behavior at additional distortion cost. The real-media case study confirms substantial mean-activity reduction alongside visible alteration and a remaining large peak. The project therefore establishes a reproducible framework and a set of falsifiable findings, not a finished safety system. Motion compensation, scene-cut rejection, local frequency estimation, stronger chromatic modeling, and held-out parameter selection are the most defensible next experiments.
 
-\begin{thebibliography}{9}
-\bibitem{nomura2000adaptive} M. Nomura, T. Takahashi, K. Kamijo, and T. Yamazaki. A new adaptive temporal filter: application to photosensitive seizure patients. \emph{Psychiatry and Clinical Neurosciences}, 54(6):685--690, 2000. doi:10.1046/j.1440-1819.2000.00770.x.
-\bibitem{w3c2023flashes} World Wide Web Consortium. Understanding Success Criterion 2.3.1: Three Flashes or Below Threshold. WCAG 2.2 supporting document, 2023. Accessed 2026-09-29.
-\bibitem{itu709} International Telecommunication Union. Recommendation ITU-R BT.709-6: Parameter values for the HDTV standards for production and international programme exchange. ITU Radiocommunication Sector, 2015.
-\bibitem{beyonce2022break} Beyonc\'e. ``BREAK MY SOUL (Official Lyric Video).'' Official video, YouTube, 2022. \url{https://www.youtube.com/watch?v=yjki-9Pthh0}. Accessed 2026-09-29.
+\begin{thebibliography}{15}\small
+\bibitem{fisher2022visually} R. Fisher et al. Visually sensitive seizures: An updated review by the Epilepsy Foundation. \emph{Epilepsia}, 63(4):739--768, 2022. doi:10.1111/epi.17175.
+\bibitem{fisher2005photic} R. Fisher et al. Photic- and pattern-induced seizures: a review. \emph{Epilepsia}, 46(9):1426--1441, 2005. doi:10.1111/j.1528-1167.2005.31405.x.
+\bibitem{harding2010image} G. Harding and P. Harding. Photosensitive epilepsy and image safety. \emph{Applied Ergonomics}, 41(4):504--508, 2010. doi:10.1016/j.apergo.2008.08.005.
+\bibitem{wilkins2005patterns} A. Wilkins, J. Emmett, and G. Harding. Characterizing patterned images that precipitate seizures. \emph{Epilepsia}, 46(8):1212--1218, 2005. doi:10.1111/j.1528-1167.2005.01405.x.
+\bibitem{porciatti2000cortical} V. Porciatti et al. Lack of cortical contrast gain control in human photosensitive epilepsy. \emph{Nature Neuroscience}, 3:259--263, 2000. doi:10.1038/72972.
+\bibitem{nomura2000adaptive} M. Nomura et al. A new adaptive temporal filter. \emph{Psychiatry and Clinical Neurosciences}, 54(6):685--690, 2000. doi:10.1046/j.1440-1819.2000.00770.x.
+\bibitem{carreira2015automatic} L. Carreira et al. Automatic detection of flashing video content. \emph{QoMEX}, 2015. doi:10.1109/QoMEX.2015.7148104.
+\bibitem{alzubaidi2016parallel} M. Alzubaidi et al. Parallel scheme for real-time detection of photosensitive seizures. \emph{Computers in Biology and Medicine}, 70:139--147, 2016. doi:10.1016/j.compbiomed.2016.01.008.
+\bibitem{barbu2020deep} A. Barbu, D. Banda, and B. Katz. Deep video-to-video transformations for accessibility with an application to photosensitivity. \emph{Pattern Recognition Letters}, 137:99--107, 2020. doi:10.1016/j.patrec.2019.01.019.
+\bibitem{south2021gifs} L. South, D. Saffo, and M. Borkin. Detecting and defending against seizure-inducing GIFs in social media. \emph{CHI}, 2021. doi:10.1145/3411764.3445510.
+\bibitem{jordan2024guidelines} J. Jordan and G. Vanderheiden. International guidelines for photosensitive epilepsy. \emph{ACM TACCESS}, 17(3):1--35, 2024. doi:10.1145/3694790.
+\bibitem{itu1702} ITU. Recommendation ITU-R BT.1702-3, 2023.
+\bibitem{itu709} ITU. Recommendation ITU-R BT.709-6, 2015.
+\bibitem{w3c2023flashes} W3C. Understanding Success Criterion 2.3.1, 2023.
+\bibitem{w3c_luminance} W3C. Relative Luminance Definition, 2023.
+\bibitem{beyonce2022break} Beyonc\'e. ``BREAK MY SOUL (Official Lyric Video).'' YouTube, 2022.
 \end{thebibliography}
 \end{document}

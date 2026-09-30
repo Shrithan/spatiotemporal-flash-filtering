@@ -9,11 +9,11 @@ experiments/results/*
 !experiments/results/canonical/
 !experiments/results/canonical/**
 *.mp4
+!docs/assets/demo.mp4
 *.mov
 *.egg-info/
 .coverage
 htmlcov/
-paper/main.pdf
 paper/main.aux
 paper/main.log
 paper/main.out

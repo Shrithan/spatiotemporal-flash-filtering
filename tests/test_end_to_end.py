@@ -25,8 +25,9 @@ def test_tiny_video_round_trip_and_filter(tmp_path: Path):
 
 def test_tiny_benchmark_writes_structured_results(tmp_path: Path):
     table=evaluate(tmp_path,length=8,height=16,width=16)
-    assert len(table)==50 and {"none","global","localized","enhanced","framegen"}==set(table.method)
-    assert (tmp_path/"benchmark.csv").exists() and len(pd.read_csv(tmp_path/"summary.csv"))==5
+    assert len(table)==72
+    assert {"none","global","localized","adaptive","enhanced_exploratory","framegen_exploratory"}==set(table.method)
+    assert (tmp_path/"benchmark.csv").exists() and len(pd.read_csv(tmp_path/"summary.csv"))==6
 
 
 def test_streaming_video_pipeline(tmp_path: Path):

@@ -1,55 +1,47 @@
 # Research Roadmap
 
-This roadmap separates research milestones from any future user-facing product.
-The repository reports computational visual-change proxies and does not claim
-clinical validation, seizure prevention, medical safety, or formal standards
-conformance.
+This roadmap separates the completed v1.0 research artifact from possible
+follow-up studies. The repository reports computational visual-change proxies;
+it does not claim clinical validation, seizure prevention, medical safety, or
+formal standards conformance.
 
-## v0.1 — Reproducible research foundation
+## Completed in v1.0
 
-- [x] Installable `src` package and CLI
-- [x] Deterministic synthetic benchmark and ground-truth masks
-- [x] Global, localized, enhanced, frame-generation, and adaptive candidates
-- [x] Luminance, saturated-red proxy, and regular-pattern evidence channels
-- [x] Structured public `analyze_video` and `filter_video` APIs
-- [x] Canonical CSV results, plots, tests, and technical report
-- [x] GitHub Actions matrix for Python 3.11–3.13
-- [ ] Re-run canonical results from a clean checkout before tagging v0.1.0
+- [x] Installable Python package, documented CLI, public API, and streaming I/O
+- [x] Explicit sRGB linearization and relative-linear-luminance formulation
+- [x] No-filter, global, and localized block baselines
+- [x] Event-specific adaptive method with luminance, red, and pattern channels
+- [x] Exploratory enhanced and frame-reconstruction failure investigations
+- [x] Twelve-case deterministic synthetic benchmark with spatial ground truth
+- [x] Per-case temporal, distortion, modification, localization, and runtime metrics
+- [x] Compact suppression--distortion parameter study and Pareto analysis
+- [x] Localized-method and adaptive-component ablations
+- [x] Natural-media case studies with source metadata and hashes, not source videos
+- [x] Generated publication figures and non-flashing README/full demo assets
+- [x] Research-style report and verified bibliography
+- [x] Unit/integration tests on Python 3.11--3.13
+- [x] Manual synthetic-reproduction CI workflow and one-command local script
 
-## v0.2 — Detection robustness
+## Potential future research
 
-- [ ] Add a weaker provisional response to the first unusually large transition
-- [ ] Reject isolated scene cuts and reset temporal state
-- [ ] Report detection delay and first-transition residual activity
-- [ ] Add raw versus motion-compensated temporal differences
-- [ ] Test camera motion, moving flashes, pans, and cuts followed by flashes
+These directions are independent research opportunities, not prerequisites for
+using or explaining the current artifact.
 
-## v0.3 — Temporal and chromatic analysis
+- [ ] Detect scene cuts and reset temporal state before applying a correction
+- [ ] Compare raw and motion-compensated temporal differences
+- [ ] Estimate local temporal frequency, duration, and periodicity
+- [ ] Investigate prospective handling of the first large transition
+- [ ] Replace the simple red ratio with a documented perceptual chromaticity model
+- [ ] Generalize pattern analysis beyond horizontal/vertical tile profiles
+- [ ] Select parameters on held-out data rather than the evaluation set
+- [ ] Evaluate broader, independently annotated natural-media datasets
+- [ ] Add controlled 720p/1080p throughput and latency measurements
+- [ ] Preserve audio and source timestamps in a supported end-to-end media pipeline
+- [ ] Evaluate HDR transfer functions and metadata explicitly
 
-- [ ] Estimate local transition frequency, duration, and periodicity
-- [ ] Replace the simple red-ratio proxy with a documented perceptual color model
-- [ ] Compare simple and perceptual chromatic analyzers in ablations
-- [ ] Keep standards-inspired analysis distinct from conformance claims
+## Separate application repository
 
-## v0.4 — Optimization and real-media evaluation
-
-- [ ] Add deterministic suppression–distortion parameter search
-- [ ] Generate Pareto-frontier CSV and figures
-- [ ] Expand the media manifest with ordinary-motion controls and diverse edits
-- [ ] Add manual computational-event annotations where licensing permits
-- [ ] Add per-channel diagnostic figures and event timelines
-
-## v1.0 — Research release
-
-- [ ] Preserve resolution, frame rate, timestamps, and audio in one supported API
-- [ ] Benchmark 720p and 1080p streaming throughput
-- [ ] Freeze the public API and configuration schema
-- [ ] Regenerate every README and paper value from canonical result files
-- [ ] Publish a tagged release before a separate application consumes the package
-
-## Future application repository
-
-A future `flashfilter-app` repository should depend on a pinned release of this
-package. It should contain interface and deployment code, avoid autoplaying
-source media, expose the research disclaimer prominently, and never duplicate
-or silently modify the algorithm implementation.
+A future product-facing repository should consume a pinned release of this
+package rather than duplicate its algorithms. Interface and deployment work
+should preserve the research disclaimer, avoid autoplaying rapid stimuli, and
+keep computational proxy output distinct from medical or compliance claims.

@@ -29,7 +29,7 @@ def _base(length: int, height: int, width: int) -> tuple[np.ndarray, np.ndarray]
     return frames, masks
 
 def generate_cases(length: int = 24, height: int = 64, width: int = 96, seed: int = 7) -> dict[str, SyntheticCase]:
-    """Generate ten controlled scenarios; the seed fixes textured backgrounds."""
+    """Generate controlled temporal, chromatic, pattern, and confound cases."""
     if min(length, height, width) < 8: raise ValueError("Synthetic dimensions must be at least 8")
     rng = np.random.default_rng(seed)
     cases: dict[str, SyntheticCase] = {}
@@ -62,6 +62,20 @@ def generate_cases(length: int = 24, height: int = 64, width: int = 96, seed: in
     for t in range(length): f[t,y0:y1,x0:x1]=.95 if (t//2)%2 else .05
     m[1:,y0:y1,x0:x1]=True
     add("rapid_local_alternation",f,m,"target","Localized region alternates every two frames.")
+
+    # Chromatic target for the adaptive red evidence/correction channel.
+    f,m=_base(length,height,width); y0,y1=height//4,3*height//4; x0,x1=width//4,3*width//4
+    f[:,y0:y1,x0:x1]=.02
+    f[1::2,y0:y1,x0:x1]=np.array([1.,0.,0.],np.float32); m[1:,y0:y1,x0:x1]=True
+    add("localized_red_alternation",f,m,"target","Localized saturated-red/near-black alternation.")
+
+    # Static regular-pattern evidence exists from the first frame, so its
+    # spatial ground truth also begins at frame zero.
+    f=np.zeros((length,height,width,3),np.float32)
+    stripe_width=max(2,width//24)
+    for x in range(0,width,2*stripe_width): f[:, :, x:x+stripe_width]=1
+    m=np.ones((length,height,width),bool)
+    add("persistent_regular_pattern",f,m,"target","Static high-contrast regular vertical pattern.")
     return cases
 
 

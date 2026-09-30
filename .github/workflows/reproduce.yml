@@ -1,0 +1,23 @@
+name: reproduce synthetic research results
+
+on:
+  workflow_dispatch:
+
+jobs:
+  synthetic-reproduction:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install package and development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Reproduce synthetic experiments
+        run: PYTHON_BIN=python ./scripts/reproduce.sh /tmp/flashfilter-results
+      - name: Upload generated result tables and figures
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-research-results
+          path: /tmp/flashfilter-results

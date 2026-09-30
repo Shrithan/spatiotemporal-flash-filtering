@@ -138,6 +138,12 @@ def filter_video_stream(
                 original,previous_output,luminance_mask,red_mask,pattern_mask,adaptive_config
             )
             previous_luminance_signed,previous_red_signed=luminance_signed,red_signed
+        elif method == "adaptive" and previous_input_y is None:
+            empty=np.zeros((height,width),dtype=bool)
+            pattern_mask=regular_pattern_mask(original,analyzer_config)
+            output,_=apply_event_specific_corrections(
+                original,original,empty,empty,pattern_mask,adaptive_config
+            )
         elif previous_input_y is None:
             output = original
         else:

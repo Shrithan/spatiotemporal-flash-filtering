@@ -27,6 +27,9 @@ class AdaptiveFilterConfig:
     max_luminance_step: float = 0.08
     pattern_contrast_reduction: float = 0.35
     feather_sigma: float = 1.5
+    enable_luminance: bool = True
+    enable_red: bool = True
+    enable_pattern: bool = True
 
 
 def _soft_mask(mask: np.ndarray, sigma: float) -> np.ndarray:
@@ -58,9 +61,10 @@ def apply_event_specific_corrections(
 
     original = np.asarray(frame, dtype=np.float32)
     output = original.copy()
-    lum = _soft_mask(luminance_mask, config.feather_sigma)
-    red = _soft_mask(red_mask, config.feather_sigma)
-    pattern = _soft_mask(pattern_mask, config.feather_sigma)
+    zero = np.zeros_like(luminance_mask, dtype=np.float32)
+    lum = _soft_mask(luminance_mask, config.feather_sigma) if config.enable_luminance else zero
+    red = _soft_mask(red_mask, config.feather_sigma) if config.enable_red else zero
+    pattern = _soft_mask(pattern_mask, config.feather_sigma) if config.enable_pattern else zero
 
     # Saturated-color events: remove chroma while preserving linear luminance.
     if np.any(red):
@@ -112,6 +116,13 @@ def adaptive_event_filter(
     )
     output = array.copy()
     masks = np.zeros(array.shape[:3], dtype=np.float32)
+    empty = np.zeros(array.shape[1:3], dtype=bool)
+    # Pattern evidence is spatial and available immediately. Applying it from
+    # frame zero avoids manufacturing a one-frame temporal transient on an
+    # otherwise static pattern sequence.
+    output[0], masks[0] = apply_event_specific_corrections(
+        array[0], array[0], empty, empty, evidence.pattern_masks[0], filter_config,
+    )
     for index in range(1, len(array)):
         output[index], masks[index] = apply_event_specific_corrections(
             array[index], output[index - 1],

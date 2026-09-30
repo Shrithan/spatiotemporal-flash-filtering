@@ -1,82 +1,66 @@
 # Spatiotemporal Flash Filtering
 
-> **Research question:** Can spatially localized temporal filtering reduce rapid luminance changes in video while preserving more of the original visual information than whole-frame filtering?
+**Research question:** Can spatially localized temporal filtering reduce rapid visual changes while preserving more source information than whole-frame filtering?
 
-This repository is an undergraduate-oriented computer-vision research project for detecting rapid brightness changes and suppressing them only where they occur. It provides a readable NumPy/OpenCV implementation, deterministic synthetic data, baselines, quantitative evaluation, ablations, plots, tests, a CLI, and a [technical report](paper/main.tex).
+![Static research demo showing source, detection, and filtered frames](docs/assets/demo.gif)
 
-> **Safety scope:** The measured temporal-activity quantities are computational proxies. This software has not been clinically validated, does not determine whether content is medically safe, does not prevent seizures, and does not establish WCAG or broadcast compliance.
+[📄 Technical report](paper/main.pdf) · [LaTeX source](paper/main.tex) · [Method notes](docs/METHOD_NOTES.md) · [Full 40-second demo](docs/assets/demo.mp4)
 
-## Method
+> **Research scope:** This is an undergraduate computer-vision research prototype. Its temporal-activity measurements are computational proxies—not clinical seizure-risk estimates. It has not been clinically validated and does not guarantee medical safety, WCAG conformance, or broadcast compliance.
 
-Frames are decoded as gamma-encoded sRGB values in `[0,1]`. The default scalar representation first linearizes sRGB,
+## What the project does
 
-```text
-C_linear = C_srgb / 12.92                         if C_srgb <= 0.04045
-           ((C_srgb + 0.055) / 1.055)^2.4         otherwise,
-```
+The package converts decoded sRGB frames to relative linear luminance, measures frame-to-frame changes, localizes rapid changes, and applies a correction only where evidence is detected. The central comparison is:
 
-then computes relative luminance `Y = 0.2126 R + 0.7152 G + 0.0722 B`. A separately named gamma-encoded luma proxy is available for experiments.
+- **Baselines:** no filtering, whole-frame temporal blending, and localized block-based blending.
+- **Proposed experimental method:** event-specific adaptive filtering with separate luminance, saturated-red, and regular-pattern evidence channels.
+- **Exploratory studies:** enhanced and frame-reconstruction filters retained for failure analysis, not presented as central methods.
 
-For consecutive frames, the per-pixel and global activity proxies are
+![Adaptive method architecture](paper/figures/adaptive_architecture.png)
+
+For normalized frames, the principal signal is
 
 ```text
 Delta_t(x,y) = |Y_t(x,y) - Y_(t-1)(x,y)|
-D_t = mean_(x,y) Delta_t(x,y).
+D_t = mean_(x,y) Delta_t(x,y)
 ```
 
-`D_t` is the global baseline detector. Its limitation is dilution: if 25% of pixels change by 0.8, `D_t = 0.2`; an intense but small region can fall below a global threshold. The localized detector instead averages recent difference maps, partitions the image into fixed blocks, thresholds each block mean, optionally closes small mask gaps, and Gaussian-feathers the result. It returns `M_t(x,y) in [0,1]`.
+where `Y` is computed after sRGB transfer-function inversion using the linear-light coefficients `0.2126, 0.7152, 0.0722`. The localized baseline thresholds block means of recent `Delta` maps and feathers the resulting mask. The adaptive method instead maps luminance reversals to step limiting, red-transition evidence to equal-luminance desaturation, and regular stripe-like patterns to local contrast reduction.
 
-The global and localized baselines use one interpretable operation—temporal blending toward the previous filtered frame. The localized output is
+## Main result: suppression and distortion must be read together
 
-```text
-I_hat_t = (1 - alpha M_t) I_t + alpha M_t I_hat_(t-1).
-```
+The v1.0 experiment contains **12 deterministic synthetic scenarios**, **49 operating points**, and **588 per-case sweep measurements**. Lower is better on both axes.
 
-This instantiates the conceptual objective `min D(V,V_hat)` subject to `R(V_hat) <= tau`: source distortion `D` and proxy activity `R` are reported jointly rather than collapsed into an unsupported safety score.
+![Suppression-distortion parameter study](experiments/results/canonical/sweep/suppression_distortion_pareto.png)
 
-An experimental `enhanced` method adds opposing-transition detection,
-multi-scale blocks, histogram-based cut rejection, and chromaticity-preserving
-luminance-step clamping. Its research rationale, measured tradeoffs, and next
-experiments are documented in [the research review](docs/research_review.md).
-The planned production path separates low-cost analysis from full-resolution
-rendering; see the [resolution-preservation design](docs/resolution_preservation.md).
-The `framegen` method is an experimental one-frame-lookahead reconstruction
-baseline. It is effective for isolated A-B-A excursions but is not recommended
-for sustained alternation; its negative result is documented in the research
-review rather than hidden.
+The negative result is important: **none of the evaluated adaptive configurations lies on the aggregate MAE/activity Pareto frontier**. Tuned global and localized baselines provide better tradeoffs on these two objectives. The adaptive method still provides the best default aggregate mask IoU and useful event-specific behavior, but at greater distortion and with first-transition latency.
 
-The standards-inspired `multianalyzer` candidate keeps three evidence channels
-separate: paired opposing luminance transitions at the same pixels, a documented
-saturated-red proxy, and persistent regular stripe patterns. Only qualifying
-temporal flash masks drive filtering; static pattern evidence is reported but
-is not incorrectly "fixed" with temporal blending. This is a research proxy,
-not a complete implementation or certification of WCAG, ITU-R, or ISO rules.
+Default-setting means from the generated [canonical CSV](experiments/results/canonical/summary.csv):
 
-The `adaptive` candidate uses those channels to choose a localized correction
-instead of applying one effect indiscriminately: saturated-red events are
-desaturated with a soft spatial mask, general luminance events receive a
-relative-linear-luminance step limit, and regular high-contrast pattern tiles
-receive local contrast reduction. Grayscale therefore addresses chromatic
-evidence only; it does not remove black-white flicker. The controls are
-experimental parameters and do not establish clinical safety.
+| Method | Mean activity ↓ | Peak ↓ | MAE ↓ | SSIM ↑ | Modified area ↓ | IoU ↑ |
+|---|---:|---:|---:|---:|---:|---:|
+| None | 0.1087 | 0.1717 | 0.0000 | 1.000 | 0.000 | 0.417 |
+| Global baseline | 0.0365 | 0.0935 | 0.0336 | 0.962 | 0.115 | 0.451 |
+| Localized baseline | 0.0310 | 0.0741 | 0.0399 | 0.940 | 0.149 | 0.628 |
+| Event-specific adaptive | 0.0297 | 0.1674 | 0.0562 | 0.917 | 0.165 | 0.891 |
 
-### Pipeline
+The adaptive ablation shows that the luminance branch supplies nearly all aggregate temporal suppression. Red correction gives a small benefit on the designed red case; pattern correction changes static appearance without reducing temporal activity. These mixed results are preserved in the report rather than hidden.
 
-```text
-video -> RGB decoding -> luminance / red / pattern analyzers
-      -> timestamp tracking + spatial overlap -> localized temporal blend
-      -> activity + distortion + localization + runtime metrics -> CSV + plots
-```
+## Why localization matters
 
-The implementation is `O(THW)` in time. Ordinary MP4 analysis and filtering
-use constant-size temporal state and `O(HW)` frame memory; lossless NPZ
-experiments intentionally load arrays for convenient evaluation. Main
-hyperparameters are activity threshold, minimum area, block size, temporal
-window, blend strength, cleanup kernel, and feathering sigma.
+On the small-square case, the global default does nothing because spatial averaging dilutes the event. Localized filtering reduces mean activity from `0.01007` to `0.00198` while modifying about `1.0%` of pixel locations. For whole-frame alternation, localization offers no area advantage and produces the same output as global filtering. The method is therefore useful in a specific spatial regime, not universally superior.
 
-## Install and quick start
+The synthetic suite also keeps difficult confounds: scene cuts, moving objects, gradual illumination, and global exposure changes. See the generated [failure-case figure](paper/figures/failure_cases.png) and the per-case rows in [benchmark.csv](experiments/results/canonical/benchmark.csv).
 
-Python 3.11–3.14 is supported by the declared dependencies.
+## Natural-media case study
+
+A 47-second excerpt from an official lyric video is used as a natural-media demonstration, not as clinically labeled validation. Under a diagnostic-strength adaptive setting, mean activity decreases from `0.06293` to `0.01408`, but the filtered peak remains `0.11285` and visible black-to-gray alteration occurs. Source media is not committed; [media_manifest.json](experiments/media_manifest.json) records provenance, segment metadata, rationale, and hashes.
+
+![Actual frame pairs from the lyric-video case study](paper/figures/lyric_adaptive/frame_sequence_comparison.png)
+
+## Install and try it
+
+Python 3.11–3.13 is tested in CI.
 
 ```bash
 python3 -m venv .venv
@@ -88,114 +72,59 @@ flashfilter generate-synthetic
 flashfilter analyze experiments/generated/small_flashing_square.npz
 flashfilter filter experiments/generated/small_flashing_square.npz \
   --method localized --output outputs/small_filtered.mp4
-flashfilter filter input.mp4 --method enhanced --threshold 0.04 \
-  --output outputs/enhanced.mp4
-flashfilter filter input.mp4 --method framegen --threshold 0.04 \
-  --output outputs/framegen.mp4
-flashfilter inspect input.mp4
-flashfilter filter input.mp4 --method multianalyzer --threshold 0.10 \
-  --output outputs/multianalyzer.mp4
-flashfilter filter input.mp4 --method adaptive --threshold 0.10 \
-  --desaturation 0.9 --max-luminance-step 0.08 \
-  --pattern-contrast-reduction 0.35 --output outputs/adaptive.mp4
-flashfilter benchmark
-flashfilter benchmark-analyzers
-flashfilter ablate
+flashfilter filter input.mp4 --method adaptive --output outputs/adaptive.mp4
 ```
 
-Ordinary video files are analyzed and filtered frame-by-frame in constant
-memory, so longer media does not need to fit entirely in RAM. OpenCV writes
-the filtered video stream only; if audio is required, remux the source audio
-with FFmpeg after filtering.
+Use `flashfilter <command> --help` for thresholds, block size, temporal window, blend, correction strengths, and mask feathering. NPZ is used for lossless experiments; ordinary video files are processed frame-by-frame. OpenCV video output does not preserve audio, so audio remuxing remains an explicit post-processing step.
 
-Use `flashfilter <command> --help` for threshold, block, window, and mask controls. NPZ files provide lossless experiment I/O; MP4 output is intended for viewing.
+## Reproduce the research
 
-### Public Python API
+Run every synthetic v1.0 experiment with one command:
 
-Applications should use the stable package-level API rather than importing
-internal processing modules:
-
-```python
-from flashfilter import AdaptiveFilterConfig, analyze_video, filter_video
-
-before = analyze_video("input.mp4")
-result = filter_video(
-    "input.mp4",
-    "outputs/adaptive.mp4",
-    method="adaptive",
-    adaptive_config=AdaptiveFilterConfig(max_luminance_step=0.05),
-)
-print(result.to_dict())
+```bash
+./scripts/reproduce.sh
 ```
 
-Reports include resolution and frame-rate checks and always expose
-`medical_safety_claimed = false`. OpenCV filtering does not copy audio; the
-current research workflow remuxes source audio explicitly with FFmpeg.
+Equivalent individual commands are:
 
-`inspect` reports luminance-flash, red-flash, and regular-pattern evidence
-separately and always includes `"standards_compliance_claimed": false`.
-`benchmark-analyzers` writes deterministic channel-level results to
-`experiments/results/analyzers/`. These labels test our documented proxies;
-they do not establish medical safety or formal standards conformance.
+```bash
+flashfilter generate-synthetic --seed 7
+flashfilter benchmark --output-dir experiments/results/canonical --seed 7
+flashfilter benchmark-analyzers --output-dir experiments/results/canonical/analyzers
+flashfilter ablate --output-dir experiments/results/canonical/localized_ablation --seed 7
+flashfilter sweep --output-dir experiments/results/canonical/sweep --seed 7
+flashfilter ablate-adaptive --output-dir experiments/results/canonical/adaptive_ablation --seed 7
+python experiments/generate_v1_figures.py
+python paper/build_pdf.py
+```
 
-Downloaded media and rendered videos remain under ignored `outputs/` paths.
-[`experiments/media_manifest.json`](experiments/media_manifest.json) records
-source identity, selection rationale, and hashes without redistributing source
-videos. Planned research milestones are tracked in [`ROADMAP.md`](ROADMAP.md).
+The seed, grid, objectives, and generated outputs are stored beside the CSV files. Fast tests run on pushes and pull requests; a separate manual GitHub Actions workflow runs the full synthetic reproduction. No copyrighted external media is required.
 
-## Synthetic benchmark
-
-The generator uses seed 7 and creates ten 24-frame, 96x64 scenarios: whole-frame alternation, small and medium flashing regions, independent regions, static texture, a gradual transition, a scene cut, global exposure-like variation, a moving bright object, and rapid localized alternation. Target scenarios include pixel masks. Negatives and confounds intentionally probe false detections.
-
-All methods receive identical input. Reported metrics are mean/peak temporal activity, frames over the experimental threshold, high-change area, residual activity in labeled regions, MAE, MSE, PSNR, SSIM, modified-pixel ratio, mask precision/recall/F1/IoU, elapsed time, and FPS. The threshold `0.12` is an experimental normalized value—not a medical or standards threshold.
-
-## Reproduced results
-
-These values come from [`experiments/results/canonical/benchmark.csv`](experiments/results/canonical/benchmark.csv), generated on 2026-09-29. They are means over ten synthetic scenarios. Runtime is machine-dependent.
-
-| Method | Mean activity | Peak activity | MAE | SSIM | Modified area | Residual in labeled regions |
-|---|---:|---:|---:|---:|---:|---:|
-| None | 0.1251 | 0.2007 | 0.0000 | 1.0000 | 0.0000 | 0.5000* |
-| Global | 0.0385 | 0.1069 | 0.0403 | 0.9545 | 0.1386 | 0.2613* |
-| Localized | 0.0356 | 0.0836 | 0.0449 | 0.9385 | 0.1562 | 0.1325* |
-
-`*` The aggregate includes unlabeled negative/confound cases, for which residual-in-region is defined as zero. Use per-scenario rows for interpretation.
-
-The localized method modified only `0.0100` of pixel locations for the small-square scenario (IoU `0.2623` because an 8x8 block is coarser than the target), but `0.9583` for whole-frame alternation. Thus localization can preserve unaffected area on small targets; it provides no area advantage when the entire image changes. In this configuration it achieved lower mean activity but slightly worse MAE/SSIM than the global baseline, so it does not dominate on every objective.
-
-![Temporal activity for the small-square scenario](experiments/results/canonical/figures/temporal_activity.png)
-
-![Distortion versus suppression](experiments/results/canonical/figures/tradeoff.png)
-
-![Localization metrics](experiments/results/canonical/figures/localization.png)
-
-## Ablations and limitations
-
-[`ablation_summary.csv`](experiments/results/canonical/ablation_summary.csv) shows the expected tradeoffs rather than a universal winner. A 4-pixel block improved mean IoU from `0.6589` (default) to `0.7511` with similar activity; a hard mask lowered activity slightly but increased distortion and risks visible seams. Cleanup made no measurable difference on these clean synthetic shapes, which is itself informative.
-
-Important failure cases:
-
-- A scene cut caused 8.33% of pixel locations to be modified and has zero localization IoU against the no-flash ground truth.
-- A moving bright object caused 2.11% modification and zero IoU. Frame differencing conflates motion boundaries with brightness alternation.
-- Global exposure oscillation was not filtered at the default local threshold, leaving mean activity `0.0436`.
-- The canonical filtering benchmark is small, synthetic, SDR, and uncompressed internally. A separate research analyzer now covers a simple saturated-red proxy and regular stripes, but it does not implement normative color definitions, viewing geometry, display brightness, HDR transfer functions, diagonal/curved patterns, or human outcomes.
-- PSNR/SSIM reward the no-op method, so they must be interpreted with activity reduction. Runtime figures are wall-clock measurements, not controlled hardware benchmarks.
-
-Alternatives worth studying include connected components, motion compensation, bidirectional/offline smoothing, frequency-domain temporal features, adaptive blocks, perceptual masking, and standards-specific analyzers. Each adds complexity that should be justified experimentally.
-
-## Repository structure and reproducibility
+## Repository map
 
 ```text
-src/flashfilter/       algorithms, metrics, I/O, CLI, plots
-experiments/           generation and experiment entry points
-experiments/results/   canonical CSV/JSON outputs and figures
-tests/                 analytic and end-to-end tests
-paper/                 LaTeX report and bibliography
-examples/              user-facing examples
+src/flashfilter/             package, algorithms, metrics, streaming I/O, CLI
+experiments/                 deterministic generators and experiment entry points
+experiments/results/canonical/  versioned tables and plots used in the paper
+tests/                       analytic, integration, determinism, and serialization tests
+paper/                       LaTeX report, verified bibliography, and figures
+docs/METHOD_NOTES.md         design choices, complexity, parameters, alternatives
+docs/assets/                 reproducible demo GIF/MP4 and metadata
 ```
 
-To reproduce from a fresh clone, follow the install block, then run `python -m pytest`, `flashfilter generate-synthetic`, `flashfilter benchmark`, `flashfilter benchmark-analyzers`, and `flashfilter ablate`. The seed and complete canonical configuration are saved in `config.json`. Generated videos are ignored; the small canonical tables and figures are versioned deliberately.
+## Limitations
 
-## Future work
+- Opposing-transition evidence cannot correct the first large transition.
+- Frame differences confuse motion and cuts with intensity changes.
+- Global events leave no unaffected region for localization to preserve.
+- Recursive blending can ghost motion; reconstruction can create interpolation artifacts.
+- The pattern detector covers horizontal/vertical tile profiles, not arbitrary geometry.
+- The red signal is a documented ratio proxy, not a complete perceptual or normative model.
+- The benchmark is small, synthetic, SDR, and not a clinical dataset.
+- Display calibration, HDR, viewing geometry, physiology, and audio/timestamps are outside the current model.
 
-Evaluate real annotated video, add motion/scene-cut rejection, estimate temporal frequency rather than only frame differences, calibrate parameters on a separate validation split, support streaming and HDR metadata, and compare against independently implemented published or standards-based analyzers without conflating proxy improvement with medical safety.
+The next defensible research steps are scene-cut rejection, motion compensation, local temporal-frequency estimation, improved chromatic modeling, broader annotated datasets, and held-out parameter selection. See [ROADMAP.md](ROADMAP.md).
+
+## License
+
+[MIT](LICENSE)

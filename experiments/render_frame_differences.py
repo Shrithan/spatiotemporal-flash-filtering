@@ -21,6 +21,7 @@ def render(original_path: Path, filtered_path: Path, output_dir: Path) -> dict[s
     if not np.isclose(fps, filtered_fps, rtol=0, atol=.02):
         raise ValueError("Videos must have matching frame rates")
     previous_original=previous_filtered=None; original_scores=[]; filtered_scores=[]; strongest_score=-1.; strongest=0
+    top_transitions: list[tuple[float, int, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
     strongest_frames=None; total_modification=0.; modified_pixels=total_pixels=0; length=0
     while True:
         ok_original,bgr_original=original_capture.read(); ok_filtered,bgr_filtered=filtered_capture.read()
@@ -33,6 +34,12 @@ def render(original_path: Path, filtered_path: Path, output_dir: Path) -> dict[s
         if previous_original is not None:
             original_change=np.abs(linear_luminance(original)-linear_luminance(previous_original)); filtered_change=np.abs(linear_luminance(filtered)-linear_luminance(previous_filtered))
             source_score=float(original_change.mean()); original_scores.append(source_score); filtered_scores.append(float(filtered_change.mean()))
+            top_transitions.append((
+                source_score, length, previous_original.copy(), original.copy(),
+                previous_filtered.copy(), filtered.copy(),
+            ))
+            top_transitions.sort(key=lambda item: item[0], reverse=True)
+            top_transitions = top_transitions[:3]
             if source_score>strongest_score:
                 strongest_score=source_score; strongest=length
                 strongest_frames=(previous_original.copy(),original.copy(),original_change.copy(),previous_filtered.copy(),filtered.copy(),filtered_change.copy(),modification.copy())
@@ -64,6 +71,28 @@ def render(original_path: Path, filtered_path: Path, output_dir: Path) -> dict[s
     for axis in axes: axis.axis("off")
     fig.colorbar(heat, ax=axes[2], fraction=.046, label="maximum channel difference")
     fig.savefig(output_dir / "source_filtered_difference.png", dpi=180)
+    plt.close(fig)
+
+    # Actual adjacent frames for the three strongest source transitions. This
+    # gives the report frame-level visual evidence rather than only curves.
+    fig, axes = plt.subplots(len(top_transitions), 4, figsize=(13, 3.2 * len(top_transitions)), constrained_layout=True)
+    if len(top_transitions) == 1:
+        axes = axes[None, :]
+    column_titles = ("Source: previous", "Source: current", "Adaptive: previous", "Adaptive: current")
+    for row, (_, frame_index, source_previous, source_current, adaptive_previous, adaptive_current) in enumerate(top_transitions):
+        for column, (panel, title) in enumerate(zip(
+            (source_previous, source_current, adaptive_previous, adaptive_current), column_titles
+        )):
+            axes[row, column].imshow(panel)
+            axes[row, column].set_title(title if row == 0 else "")
+            axes[row, column].axis("off")
+        axes[row, 0].text(
+            0.02, 0.96, f"{frame_index / fps:.2f} s  |  frame {frame_index}",
+            transform=axes[row, 0].transAxes, ha="left", va="top", fontsize=9,
+            color="white", bbox={"facecolor":"black","alpha":.72,"pad":3,"edgecolor":"none"},
+        )
+    fig.suptitle("Three strongest source transitions: actual adjacent frame pairs")
+    fig.savefig(output_dir / "frame_sequence_comparison.png", dpi=180)
     plt.close(fig)
 
     times = np.arange(1, length) / fps

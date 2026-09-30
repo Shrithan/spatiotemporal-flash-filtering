@@ -1,0 +1,52 @@
+{
+  "seed": 7,
+  "length": 24,
+  "height": 64,
+  "width": 96,
+  "grid": {
+    "global_thresholds": [
+      0.04,
+      0.08,
+      0.12,
+      0.18
+    ],
+    "global_blends": [
+      0.35,
+      0.65,
+      0.85
+    ],
+    "localized_thresholds": [
+      0.06,
+      0.12,
+      0.18
+    ],
+    "localized_blends": [
+      0.35,
+      0.65,
+      0.85
+    ],
+    "localized_block_sizes": [
+      4,
+      8
+    ],
+    "adaptive_luminance_thresholds": [
+      0.05,
+      0.1,
+      0.15
+    ],
+    "adaptive_max_luminance_steps": [
+      0.03,
+      0.08,
+      0.15
+    ],
+    "adaptive_profiles": [
+      "moderate",
+      "strong"
+    ]
+  },
+  "objectives": {
+    "distortion": "mae",
+    "residual_activity": "mean_activity"
+  },
+  "medical_risk_function": false
+}

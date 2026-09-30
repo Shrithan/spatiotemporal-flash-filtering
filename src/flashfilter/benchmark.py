@@ -5,7 +5,7 @@ from pathlib import Path
 from time import perf_counter
 import numpy as np
 import pandas as pd
-from .filtering import global_filter, localized_filter, no_filter
+from .filtering import AdaptiveFilterConfig, adaptive_event_filter, global_filter, localized_filter, no_filter
 from .localization import LocalizationConfig
 from .metrics import distortion_metrics, localization_metrics, modified_area_ratio, residual_inside_regions, temporal_metrics
 from .synthetic import generate_cases, generate_analyzer_cases
@@ -19,7 +19,7 @@ def evaluate(output_dir: str|Path, *, length: int=24, height: int=64, width: int
     """Evaluate all methods on identical deterministic inputs and save CSV/JSON."""
     destination=Path(output_dir); destination.mkdir(parents=True,exist_ok=True); rows=[]; traces=[]
     for case in generate_cases(length,height,width,seed).values():
-        methods={"none":lambda:no_filter(case.frames),"global":lambda:global_filter(case.frames,config.threshold),"localized":lambda:localized_filter(case.frames,config),"enhanced":lambda:enhanced_filter(case.frames,EnhancedConfig()),"framegen":lambda:framegen_filter(case.frames,FrameGenerationConfig())}
+        methods={"none":lambda:no_filter(case.frames),"global":lambda:global_filter(case.frames,config.threshold),"localized":lambda:localized_filter(case.frames,config),"adaptive":lambda:adaptive_event_filter(case.frames,case.fps),"enhanced_exploratory":lambda:enhanced_filter(case.frames,EnhancedConfig()),"framegen_exploratory":lambda:framegen_filter(case.frames,FrameGenerationConfig())}
         for method,run in methods.items():
             start=perf_counter(); result=run(); elapsed=perf_counter()-start
             temporal=temporal_metrics(result.frames,config.threshold,config.threshold); distortion=distortion_metrics(case.frames,result.frames); localization=localization_metrics(result.masks,case.masks)

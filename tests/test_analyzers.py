@@ -86,3 +86,24 @@ def test_adaptive_filter_bounds_detected_luminance_reversal():
     )
     from flashfilter.luminance import linear_luminance
     assert np.max(np.abs(linear_luminance(result.frames[2]) - linear_luminance(result.frames[1]))) <= .1001
+
+
+def test_adaptive_channel_switches_isolate_corrections():
+    frames=np.zeros((4,16,16,3),np.float32)
+    frames[1::2,4:12,4:12,0]=1
+    analyzer=AnalyzerConfig(luminance_transition=2,red_transition=.1,min_area_ratio=.1)
+    disabled=adaptive_event_filter(
+        frames,8,analyzer_config=analyzer,
+        filter_config=AdaptiveFilterConfig(enable_luminance=False,enable_red=False,enable_pattern=False),
+    )
+    assert np.allclose(disabled.frames,frames)
+    assert not np.any(disabled.masks)
+
+
+def test_static_pattern_correction_does_not_create_temporal_transient():
+    striped=np.zeros((4,32,32,3),np.float32)
+    for x in range(0,32,4): striped[:, :, x:x+2]=1
+    result=adaptive_event_filter(striped,8)
+    from flashfilter.metrics import temporal_metrics
+    assert temporal_metrics(result.frames)["peak_activity"]==0
+    assert np.any(np.abs(result.frames-striped)>0)

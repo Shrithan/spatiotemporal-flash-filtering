@@ -1,0 +1,9 @@
+{
+  "synthetic_case": "medium_flashing_region",
+  "seed": 7,
+  "full_demo_seconds": 40.0,
+  "gif_seconds": 10,
+  "rapid_flashing_replayed": false,
+  "source_results": "experiments/results/canonical/sweep",
+  "sweep_points": 49
+}

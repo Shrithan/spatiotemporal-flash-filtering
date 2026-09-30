@@ -27,6 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark=sub.add_parser("benchmark",help="run all methods and generate metrics and plots"); benchmark.add_argument("--output-dir",default="experiments/results"); benchmark.add_argument("--seed",type=int,default=7)
     analyzer_benchmark=sub.add_parser("benchmark-analyzers",help="run deterministic luminance/red/pattern boundary cases"); analyzer_benchmark.add_argument("--output-dir",default="experiments/results/analyzers")
     ablate=sub.add_parser("ablate",help="run localized-method component ablations"); ablate.add_argument("--output-dir",default="experiments/results"); ablate.add_argument("--seed",type=int,default=7)
+    sweep=sub.add_parser("sweep",help="run the deterministic suppression-distortion parameter study"); sweep.add_argument("--output-dir",default="experiments/results/sweep"); sweep.add_argument("--seed",type=int,default=7)
+    adaptive_ablation=sub.add_parser("ablate-adaptive",help="ablate adaptive luminance, red, and pattern channels"); adaptive_ablation.add_argument("--output-dir",default="experiments/results/adaptive_ablation"); adaptive_ablation.add_argument("--seed",type=int,default=7)
     for child in (filtering,benchmark):
         child.add_argument("--threshold",type=float,default=.12,help="normalized activity decision threshold")
         child.add_argument("--block-size",type=int,default=8,help="spatial block side length in pixels")
@@ -78,3 +80,9 @@ def main(argv: list[str]|None=None) -> None:
         evaluate(args.output_dir,seed=args.seed,config=_config(args)); generate_plots(args.output_dir); return
     if args.command=="benchmark-analyzers": evaluate_analyzers(args.output_dir); return
     if args.command=="ablate": run_ablations(args.output_dir,seed=args.seed); return
+    if args.command=="sweep":
+        from .studies import run_parameter_sweep
+        run_parameter_sweep(args.output_dir,seed=args.seed); return
+    if args.command=="ablate-adaptive":
+        from .studies import run_adaptive_ablation
+        run_adaptive_ablation(args.output_dir,seed=args.seed); return

@@ -1,0 +1,8 @@
+scenario,description,expected_luminance,expected_red,expected_pattern,predicted_luminance,predicted_red,predicted_pattern,all_channels_correct,frames,fps,luminance_flash_events,red_flash_events,peak_luminance_flashes_per_second,peak_red_flashes_per_second,peak_luminance_flash_area_ratio,peak_red_flash_area_ratio,pattern_longest_duration_seconds,luminance_limit_exceeded,red_limit_exceeded,persistent_pattern_detected,standards_compliance_claimed
+global_luminance_alternation,Full-frame black/white alternation.,True,False,False,True,False,False,True,12,12.0,10,0,10,0,1.0,0.0,0.0,True,False,False,False
+localized_red_alternation,Localized red/near-black alternation.,True,True,False,True,True,False,True,12,12.0,10,10,10,10,0.25,0.25,0.0,True,True,False,False
+persistent_regular_stripes,Static high-contrast regular vertical stripes.,False,False,True,False,False,True,True,12,12.0,0,0,0,0,0.0,0.0,1.0,False,False,True,False
+monotonic_ramp,Large but one-direction brightness ramp.,False,False,False,False,False,False,True,12,12.0,0,0,0,0,0.0,0.0,0.0,False,False,False,False
+single_scene_cut,One high-magnitude transition without reversal.,False,False,False,False,False,False,True,12,12.0,0,0,0,0,0.0,0.0,0.0,False,False,False,False
+multistep_excursion,Multiple same-direction steps and a single return.,False,False,False,False,False,False,True,12,12.0,1,0,1,0,1.0,0.0,0.0,False,False,False,False
+out_of_sync_small_regions,Different small regions change out of sync.,False,False,False,False,False,False,True,12,12.0,0,0,0,0,0.109375,0.0,0.0,False,False,False,False
